@@ -30,7 +30,6 @@ class NetworkAgent(Agent):
         
     def select_receiver(self, mode):
         neighbors = self.model.grid.get_neighbors(self, include_center=False, radius = 1)
-        threshold = 0
         if mode == "close":
             max_node = max(self.model.G[self], key=lambda node: self.model.G[1][node]['weight'])
             neighbors = list(max_node)
@@ -39,13 +38,21 @@ class NetworkAgent(Agent):
     def spread(self, receivers_lst):
         for receiver in receivers_lst:
             receiver.received.append((self, self.belief_scale))
-        pass
+            if receiver.se_motivated:
+                se_score = self.belief_scale * self.model.G[receiver][self]['weight']
+            # Need to think more about how to construct the scale and scores
+            receiver.belief_scale += receiver.digital_literacy*receiver.cognitive_ability*se_score
 
     def fact_checker(self):
-        pass
+        if self.random.random() > self.model.fact_checking_prob:
+            if self.belief_scale < 0:
+                self.belief_scale += 1 # Adjustments HERE PERHAPS?
+                self.adjust_weight()
 
     def adjust_weight(self):
-        pass
+        for node, attitude in self.received:
+            if attitude > 0:
+                self.model.G[self][node]['weight'] *= self.model.confidence_deprecation_rate
 
     def step(self):
         self.check()

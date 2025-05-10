@@ -111,10 +111,14 @@ class MisinformationnNetwork(Model):
         alpha_dl = 3, # used to generatebeta distribution for digital literacy
         beta_dl = 5,
         seed_mode = "random",
+        fact_checking_prob = 0.95,
+        confidence_deprecation_rate = 0.95,
         seed=None,
     ):
         super().__init__(seed=seed)
         random.seed(seed)
+        self.fact_checking_prob = fact_checking_prob
+        self.confidence_deprecation_rate = confidence_deprecation_rate
 
         # Set up network: number of nodes, base probability of connection, type of network (binary or weighted)
         self.num_nodes = num_residents * (1 + staff_resident_ratio)

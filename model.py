@@ -36,50 +36,50 @@ def staff_or_resident(graph, n, ratio):
     centrality = nx.degree_centrality(graph)
     # Sort by betweenness centrality
     # randomly select among nodes of high betweenness centrality to be staffs
-    selection_range = n * ratio * 2
+    selection_range = int(n * ratio * 2)
     sorted_nodes = sorted(centrality, key=centrality.get, reverse=True)[:selection_range:]
-    selected_nodes = random.sample(sorted_nodes, n * ratio)
+    selected_nodes = random.sample(sorted_nodes, int(n * ratio))
 
     # Assign node types: Resident or Staff based on betwmess 
     identity = {}
     for node in graph.nodes():
         if node in selected_nodes:
-            identity[node] = "Staff"
+            identity[node] = "S"
         else:
-            identity[node] = "Resident"
+            identity[node] = "R"
 
     # Add the node types as an attribute to the graph
     nx.set_node_attributes(graph, identity, "identity")
 
-def drop_misinformation(graph, n, seed_mode):
+def drop_misinformation(model, n, seed_mode):
     '''
     Assign Misinformation to One Node
     '''
     percentile_marker = math.ceil(n * 0.25)
-    betweenness_centrality = calc_betweenness(graph)
-    degree_centrality = calc_degree(graph)
+    betweenness_centrality = calc_betweenness(model.G)
+    degree_centrality = calc_degree(model.G)
     betweenness_sort = sorted(betweenness_centrality, key=betweenness_centrality.get, reverse=True)
     degree_sort = sorted(degree_centrality, key=degree_centrality.get, reverse=True)
 
     if seed_mode == "high_betweenness":
         sorted_nodes = betweenness_sort[:percentile_marker:]
-        selection_range = [node for node in graph.nodes() if node['identity'] == 'Resident' and node in sorted_nodes]
+        selection_range = [node for node in model.G.nodes() if model.G.nodes[node]['identity'] == 'R' and node in sorted_nodes]
     elif seed_mode == "high_degree":
         sorted_nodes = degree_sort[:percentile_marker:]
-        selection_range = [node for node in sorted_nodes if node['identity'] == 'Resident' and node in sorted_nodes]
+        selection_range = [node for node in sorted_nodes if model.G.nodes[node]['identity'] == 'R' and node in sorted_nodes]
     elif seed_mode == "peripheral_betweenness":
         sorted_nodes = betweenness_sort[n - percentile_marker - 1::]
-        selection_range = [node for node in graph.nodes() if node['identity'] == 'Resident' and node in sorted_nodes]
+        selection_range = [node for node in model.G.nodes() if model.G.nodes[node]['identity'] == 'R' and node in sorted_nodes]
     elif seed_mode == "peripheral_degree":
         sorted_nodes = degree_sort[n - percentile_marker - 1::]
-        selection_range = [node for node in graph.nodes() if node['identity'] == 'Resident' and node in sorted_nodes]
+        selection_range = [node for node in model.G.nodes() if model.G.nodes[node]['identity'] == 'R' and node in sorted_nodes]
     elif seed_mode == "staff":
-        selection_range = [node for node in graph.nodes() if node['identity'] == 'Staff']
+        selection_range = [node for node in model.G.nodes() if model.G.nodes[node]['identity'] == 'S']
     elif seed_mode == "random":
-        selection_range = list(graph)
+        selection_range = list(model.G)
     
-    seed_node = random.sample(selection_range)
-    seed_node.belief_scale = 1
+    seed_node = random.sample(selection_range, k = 1)
+    model.grid.get_cell_list_contents(seed_node)[0].belief_scale = 1
 
 # Helper function for DataCollector
 def calc_density(model):
@@ -98,12 +98,12 @@ def calc_degree(graph):
     return nx.degree_centrality(graph)
 
 
-class MisinformationnNetwork(Model):
+class MisinformationNetwork(Model):
     # Define initiation
     def __init__(
         self,
-        num_residents=20,
-        avg_node_degree=3,
+        num_residents = 10,
+        avg_node_degree = 5,
         network_type="unweighted",
         staff_resident_ratio = 0.1,
         alpha_cognitive = 3, # used to generate beta distribution for cognitive ability
@@ -111,6 +111,7 @@ class MisinformationnNetwork(Model):
         alpha_dl = 3, # used to generatebeta distribution for digital literacy
         beta_dl = 5,
         seed_mode = "random",
+        info_format = "text",
         fact_checking_prob = 0.95,
         confidence_deprecation_rate = 0.95,
         seed=None,
@@ -119,21 +120,22 @@ class MisinformationnNetwork(Model):
         random.seed(seed)
         self.fact_checking_prob = fact_checking_prob
         self.confidence_deprecation_rate = confidence_deprecation_rate
+        self.info_format = info_format
 
         # Set up network: number of nodes, base probability of connection, type of network (binary or weighted)
-        self.num_nodes = num_residents * (1 + staff_resident_ratio)
+        self.num_nodes = int(num_residents * (1 + staff_resident_ratio))
         self.network_type = network_type
         prob = avg_node_degree / self.num_nodes
         # Set up unweighted directed network, creating edges randomly and setting all edge weights to one
         if self.network_type == "unweighted":
-            self.G = nx.gnp_random_graph(n=self.num_nodes, p=prob, directed = True)
+            self.G = nx.erdos_renyi_graph(n=self.num_nodes, p=prob, seed=seed, directed = True)
             self.G = remove_self_loops(self.G)
             for u, v in self.G.edges():
                 self.G.edges[u, v]['weight'] = 1              
         # Weighted directed network. weight represents level of trust. 
         # u->v: exist: have contact; high weight: strong investment in this connection
         elif self.network_type == "weighted":
-            self.G = nx.gnp_random_graph(n=self.num_nodes, p=prob, directed = True)
+            self.G = nx.erdos_renyi_graph(n=self.num_nodes, p=prob, seed=seed, directed = True)
             self.G = remove_self_loops(self.G)
             for u, v in self.G.edges():
                 # POTENTIAL CHANGES: higher weight tie tend to have higher weight reciprocity?
@@ -142,6 +144,8 @@ class MisinformationnNetwork(Model):
         # Note this example network is undirected  
         elif self.network_type == "smallworld":
             self.G = nx.connected_watts_strogatz_graph(n=self.num_nodes, k = avg_node_degree, p=prob)
+            for u, v in self.G.edges():
+                self.G.edges[u, v]['weight'] = 1  
         else:
             raise ValueError("Unsupported network type, please select: unweighted, weighted, or smallworld")
         
@@ -162,11 +166,11 @@ class MisinformationnNetwork(Model):
         
         # Define data collection
         self.datacollector = mesa.DataCollector(
-            {
+            model_reporters = {
                 "Trust": lambda m: len(
-                    [a for a in m.agents if a.belief_scale > 0]),
+                    [a for a in m.agents if a.belief_scale > 0.33]),
                 "Distrust": lambda m: len(
-                    [a for a in m.agents if a.belief_scale < 0]),
+                    [a for a in m.agents if a.belief_scale < -0.33]),
                 "Belief Scores": calc_belief,
                 "Netsork Density": calc_density,
             }
@@ -174,9 +178,10 @@ class MisinformationnNetwork(Model):
 
         # Create Agents and Place them on Grid
         for node in self.G.nodes():
-            if node['identity'] == 'Staff':
+            if self.G.nodes[node]['identity'] == 'S':
                 agent = NetworkAgent(
                     self,
+                    node = node,
                     cognitive_ability = random.betavariate(beta_cognitive, alpha_cognitive),
                     digital_literacy = random.betavariate(beta_dl, alpha_dl),
                     se_motivated = False,
@@ -187,6 +192,7 @@ class MisinformationnNetwork(Model):
             else:
                 agent = NetworkAgent(
                     self,
+                    node = node,
                     cognitive_ability = random.betavariate(alpha_cognitive, beta_cognitive),
                     digital_literacy = random.betavariate(beta_dl, alpha_dl),
                     se_motivated = True,
@@ -196,7 +202,7 @@ class MisinformationnNetwork(Model):
                 self.grid.place_agent(agent, node)
 
         # Launch Misinformation
-        drop_misinformation(self.G, self.num_nodes, seed_mode)
+        drop_misinformation(self, self.num_nodes, seed_mode)
 
         self.running = True
         self.datacollector.collect(self)

@@ -13,11 +13,22 @@ from agents import NetworkAgent
 # actively seeks fact-checking services(with prob determine misinfo or not) and 
 # actively reach out to residents in contact to clarify info(or perhaps spread truth?). 
 
-# Do I want to allow agents(residents+staff) to form/break ties in the process?
-
-# POTENTIAL CHANGES: higher weight tie tend to have higher weight reciprocity?
-
 # Helper Functions for Network Construction
+def reciprocated_directed_graph(n, p, seed=None):
+    # Generate an undirected Erdos-Renyi graph
+    undirected_graph = nx.erdos_renyi_graph(n=n, p=p, seed=seed, directed=False)
+    
+    # Create a directed graph
+    G = nx.DiGraph()
+    G.add_nodes_from(undirected_graph.nodes())
+
+    # For each undirected edge, add both (u,v) and (v,u)
+    for u, v in undirected_graph.edges():
+        G.add_edge(u, v)
+        G.add_edge(v, u)
+
+    return G
+
 def remove_self_loops(graph):
     '''
     Self-Loop Remover
@@ -82,9 +93,6 @@ def drop_misinformation(model, n, seed_mode):
     model.grid.get_cell_list_contents(seed_node)[0].belief_scale = 1
 
 # Helper function for DataCollector
-def calc_density(model):
-    return nx.density(model.G)
-
 def calc_belief(model):
     belief_scores = 0
     for a in model.grid.get_all_cell_contents():
@@ -102,40 +110,38 @@ class MisinformationNetwork(Model):
     # Define initiation
     def __init__(
         self,
-        num_residents = 10,
+        num_residents = 20,
         avg_node_degree = 5,
-        network_type="unweighted",
+        network_type="uniform weight",
         staff_resident_ratio = 0.1,
         alpha_cognitive = 3, # used to generate beta distribution for cognitive ability
-        beta_cognitive = 5,
+        beta_cognitive = 5, #fixed
         alpha_dl = 3, # used to generatebeta distribution for digital literacy
-        beta_dl = 5,
+        beta_dl = 5, #fixed
         seed_mode = "random",
-        info_format = "text",
-        fact_checking_prob = 0.95,
-        confidence_deprecation_rate = 0.95,
+        fact_checking_prob = 0.05,
+        confidence_deprecation_rate = 0.1,
         seed=None,
     ):
         super().__init__(seed=seed)
         random.seed(seed)
         self.fact_checking_prob = fact_checking_prob
         self.confidence_deprecation_rate = confidence_deprecation_rate
-        self.info_format = info_format
 
         # Set up network: number of nodes, base probability of connection, type of network (binary or weighted)
         self.num_nodes = int(num_residents * (1 + staff_resident_ratio))
         self.network_type = network_type
         prob = avg_node_degree / self.num_nodes
         # Set up unweighted directed network, creating edges randomly and setting all edge weights to one
-        if self.network_type == "unweighted":
-            self.G = nx.erdos_renyi_graph(n=self.num_nodes, p=prob, seed=seed, directed = True)
+        if self.network_type == "uniform weight":
+            self.G = reciprocated_directed_graph(n=self.num_nodes, p=prob, seed=seed)
             self.G = remove_self_loops(self.G)
             for u, v in self.G.edges():
                 self.G.edges[u, v]['weight'] = 1              
         # Weighted directed network. weight represents level of trust. 
         # u->v: exist: have contact; high weight: strong investment in this connection
-        elif self.network_type == "weighted":
-            self.G = nx.erdos_renyi_graph(n=self.num_nodes, p=prob, seed=seed, directed = True)
+        elif self.network_type == "random weight":
+            self.G = reciprocated_directed_graph(n=self.num_nodes, p=prob, seed=seed)
             self.G = remove_self_loops(self.G)
             for u, v in self.G.edges():
                 # POTENTIAL CHANGES: higher weight tie tend to have higher weight reciprocity?
@@ -146,9 +152,7 @@ class MisinformationNetwork(Model):
             self.G = nx.connected_watts_strogatz_graph(n=self.num_nodes, k = avg_node_degree, p=prob)
             for u, v in self.G.edges():
                 self.G.edges[u, v]['weight'] = 1  
-        else:
-            raise ValueError("Unsupported network type, please select: unweighted, weighted, or smallworld")
-        
+
         # Assign attribute
         staff_or_resident(self.G, self.num_nodes, staff_resident_ratio)
 
@@ -156,10 +160,12 @@ class MisinformationNetwork(Model):
         self.weight_lst = self.get_weight_lst()
 
         # Get position
-        if self.network_type == "smallworld":
-            self.position = nx.circular_layout(self.G)
-        else:
-            self.position = nx.spring_layout(self.G, k = 1, seed=seed)
+        # if self.network_type == "smallworld":
+        #     self.position = nx.circular_layout(self.G)
+        # else:
+        #     self.position = nx.spring_layout(self.G, k = 1, seed=seed)
+        
+        self.position = nx.circular_layout(self.G)
 
         # Create grid from network object
         self.grid = mesa.space.NetworkGrid(self.G)
@@ -167,12 +173,10 @@ class MisinformationNetwork(Model):
         # Define data collection
         self.datacollector = mesa.DataCollector(
             model_reporters = {
-                "Trust": lambda m: len(
-                    [a for a in m.agents if a.belief_scale > 0.33]),
-                "Distrust": lambda m: len(
-                    [a for a in m.agents if a.belief_scale < -0.33]),
+                "Distrust": lambda m: len([a for a in m.agents if a.belief_scale > 0.33]) / len(m.agents),
+                "Trust": lambda m: len([a for a in m.agents if a.belief_scale < -0.33]) / len(m.agents),
+                "Neglect": lambda m: len([a for a in m.agents if -0.33 <= a.belief_scale <= 0.33]) / len(m.agents),
                 "Belief Scores": calc_belief,
-                "Netsork Density": calc_density,
             }
         )
 
@@ -208,7 +212,7 @@ class MisinformationNetwork(Model):
         self.datacollector.collect(self)
 
     def get_weight_lst(self):
-        if self.network_type == "weighted":
+        if self.network_type == "random weight":
             self.weights = [data['weight'] for _, _, data in self.G.edges(data=True)]
         else:
             self.weights = [1] * len(self.G.edges)
@@ -217,3 +221,6 @@ class MisinformationNetwork(Model):
     def step(self):
         self.agents.shuffle_do("step")
         self.datacollector.collect(self)
+        #Stopping Condition
+        if calc_belief(self) == abs(self.num_nodes):
+            self.running = False

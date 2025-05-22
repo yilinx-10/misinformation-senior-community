@@ -1,7 +1,6 @@
 from mesa import Agent
 
-# To Do
-# 1 Repetition's effect will make shifts in scale larger each round
+# repetition increases general susceptibility  
 
 class NetworkAgent(Agent):
     #Define initiation of agents
@@ -38,46 +37,49 @@ class NetworkAgent(Agent):
         if mode == "close":
             max_weight = 0
             for neighbor in neighbors:
-                if self.model.G.has_edge(neighbor.node, self.node):
-                    weight = self.model.G[self.node][neighbor.node]['weight']
-                    if weight > max_weight:
-                        max_weight = weight
-                        neighbors = [neighbor]
+                weight = self.model.G[self.node][neighbor.node]['weight']
+                if weight > max_weight:
+                    max_weight = weight
+                    neighbors = [neighbor]
         return neighbors
 
     def spread(self, receivers_lst):
         for receiver in receivers_lst:
-            if self.random.random() > 0.5:
+            if self.random.random() > 0.5: # by chance notice
                 receiver.received.append((self.node, self.belief_scale))
-                se_score = 1
-                text_or_visual = 1
-                authority = 1
-                if receiver.se_motivated:
-                    if self.model.G.has_edge(receiver.node, self.node):
-                        se_score = 1.1 * self.model.G[receiver.node][self.node]['weight']
-                # Need to think more about how to construct the scale and scores
-                if self.model.info_format == "visual":
-                    text_or_visual = 1.1
-                if not self.se_motivated:
-                    authority = 1.1
-                receiver.belief_scale += receiver.digital_literacy*receiver.cognitive_ability*text_or_visual*se_score*authority
+
+                if self.belief_scale > 0 and self.random.random() < self.model.fact_checking_prob * receiver.digital_literacy:
+                    receiver.belief_scale  = -1# Adjustments HERE PERHAPS?
+                    receiver.adjust_weight()
+                    break
+
+                se_score = 0.5
+                authority = 0.5
+
+                if receiver.se_motivated: # only residents are
+
+                    se_score += self.model.G[receiver.node][self.node]['weight']
+
+                    if not self.se_motivated: # if sender is not resident
+                        authority = 1
+
+                # Independent thinking
+                # If higher digital literacy higher cognitive ability, then 
+                # 1) sender wrong belief: update own belief less
+                # 2) sender correct belief: update own belief more
+                if self.belief_scale > 0:
+                    receiver.belief_scale += (1 - receiver.digital_literacy)*(1 - receiver.cognitive_ability)*se_score*authority
+                elif self.belief_scale < 0:
+                    receiver.belief_scale += receiver.digital_literacy*receiver.cognitive_ability*se_score*authority
+
                 receiver.belief_scale = min(receiver.belief_scale, 1)
                 receiver.belief_scale = max(receiver.belief_scale, -1)
-
-    def fact_checker(self):
-        if self.random.random() > self.model.fact_checking_prob:
-            if self.belief_scale > 0:
-                self.belief_scale  *= 0.5# Adjustments HERE PERHAPS?
-                self.adjust_weight()
 
     def adjust_weight(self):
         if self.received:
             for sender, attitude in self.received:
                 if attitude > 0:
-                    if self.model.G.has_edge(self.node, sender):
-                        # ADD CONDITION TO ENABLE CHANGE ONLY IN WEIGHTED
-                        self.model.G[self.node][sender]['weight'] *= self.model.confidence_deprecation_rate
+                    self.model.G[self.node][sender]['weight'] *= (1 - self.model.confidence_deprecation_rate)
 
     def step(self):
         self.check()
-        self.fact_checker()

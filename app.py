@@ -9,9 +9,6 @@ from model import MisinformationNetwork
 from mesa.visualization import Slider, SolaraViz, make_plot_component
 from mesa.visualization.utils import update_counter
 
-
-#color_dict = {"Trust": '#800000', "Distrust" : '#7BC8F6', "Belief Scores": '#800080', "Netsork Density" : '#FFC0CB'}
-
 # Define model parameters
 model_params = {
     "seed": {
@@ -21,13 +18,13 @@ model_params = {
     },
     "num_residents": Slider(
         label="Number of residents",
-        value=10,
+        value=20,
         min=10,
         max=100,
         step=10,
     ),
     "staff_resident_ratio": Slider(
-        label="Number of residents",
+        label="Staff Resident Ratio",
         value=0.1,
         min=0.1,
         max=1.0,
@@ -42,36 +39,22 @@ model_params = {
     ),
     "network_type": {
         "type": "Select",
-        "value": "unweighted",
-        "values": ["unweighted", "weighted", "smallworld"],
+        "value": "uniform weight",
+        "values": ["uniform weight", "random weight", "smallworld"],
         "label": "Network Type",
     },
     "alpha_cognitive": Slider(
-        label="Cognitive Ability Beta-Distribution Alpha",
+        label="Cognitive Ability Alpha",
         value=3,
         min=1,
-        max=10,
-        step=1,
-    ),
-    "beta_cognitive": Slider(
-        label="Cognitive Ability Beta-Distribution Beta",
-        value=5,
-        min=1,
-        max=10,
+        max=5,
         step=1,
     ),
     "alpha_dl": Slider(
-        label="Digital Literacy Beta-Distribution Alpha",
+        label="Digital Literacy Alpha",
         value=3,
         min=1,
-        max=10,
-        step=1,
-    ),
-    "beta_dl": Slider(
-        label="Digital Literacy Beta-Distribution Beta",
-        value=5,
-        min=1,
-        max=10,
+        max=5,
         step=1,
     ),
     "seed_mode": {
@@ -80,25 +63,19 @@ model_params = {
         "values": ["random", "staff", "high_betweenness", "high_degree", "peripheral_betweenness", "peripheral_degree"],
         "label": "Initial Misinformation Drop Mode",
     },
-    "info_format": {
-        "type": "Select",
-        "value": "text",
-        "values": ["text", "visual"],
-        "label": "Misinformation Type",
-    },
     "fact_checking_prob": Slider(
         label="Fact Checking Probability",
-        value=0.95,
+        value=0.05,
         min=0.0,
         max=1.0,
         step=0.05,        
     ),
     "confidence_deprecation_rate": Slider(
         label="Confidence Deprecation Rate",
-        value=0.95,
-        min=0.05,
+        value=0.1,
+        min=0.1,
         max=1.0,
-        step=0.05,        
+        step=0.1,        
     ),
 }
 
@@ -119,7 +96,7 @@ def NetPlot(model):
             ax=ax,
             pos = model.position,
             labels = nx.get_node_attributes(model.G, "identity"),
-            node_size = 100,
+            node_size = 300,
             arrowstyle = '->',
             arrowsize = 5,
             font_size = 8, 
@@ -129,38 +106,33 @@ def NetPlot(model):
     # Plot the figure
     solara.FigureMatplotlib(fig)
 
-# def LinePlot(model, type):
-#     # Set this to update every turn, define it as mpl figure
-#     update_counter.get()
-#     fig = Figure()
-#     ax = fig.subplots()   
-#     data = model.datacollector.get_model_vars_dataframe()[[type]]
-#     ax.plot(data, linestyle = '--', linewidth = 1.0, color = color_dict[type])
-#     solara.FigureMatplotlib(fig)
+@solara.component
+def ProportionPlot(model):
+    # Set this to update every turn, define it as mpl figure
+    update_counter.get()
+    fig = Figure()
+    ax = fig.subplots()
+    data = model.datacollector.get_model_vars_dataframe()
+    trust = data["Trust"]
+    neglect = data["Neglect"]
+    x = data.index
+    ax.fill_between(x, 0, trust, label="Trust", color="skyblue")
+    ax.fill_between(x, trust, trust + neglect, label="Neglect", color="lightgray")
+    ax.fill_between(x, trust + neglect, 1, label="Distrust", color="salmon")
+    solara.FigureMatplotlib(fig)
 
-Trust_Plot = make_plot_component({"Trust": '#800000'})
-Distrust_Plot = make_plot_component({"Distrust" : '#7BC8F6'})
 BS_Plot = make_plot_component({"Belief Scores": '#800080'})
-ND_plot = make_plot_component({"Netsork Density" : '#FFC0CB'})
-
 
 # Initialize model instance
 model1 = MisinformationNetwork()
-
-# Trust_Plot = LinePlot(model1, "Trust")
-# Distrust_Plot = LinePlot(model1,"Distrust")
-# BS_Plot = LinePlot(model1,"Belief Scores")
-# ND_plot = LinePlot(model1,"Netsork Density")
 
 # Define page components
 page = SolaraViz(
     model1,
     components=[
         NetPlot,
-        Trust_Plot,
-        Distrust_Plot,
         BS_Plot,
-        ND_plot,
+        ProportionPlot,
     ],
     model_params=model_params,
     name="Misinformation Model",

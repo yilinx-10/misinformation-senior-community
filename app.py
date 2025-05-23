@@ -18,7 +18,7 @@ model_params = {
     },
     "num_residents": Slider(
         label="Number of residents",
-        value=20,
+        value=50,
         min=10,
         max=100,
         step=10,
@@ -116,9 +116,9 @@ def ProportionPlot(model):
     trust = data["Trust"]
     neglect = data["Neglect"]
     x = data.index
-    ax.fill_between(x, 0, trust, label="Trust", color="skyblue")
+    ax.fill_between(x, 0, trust, label="Trust", color="salmon")
     ax.fill_between(x, trust, trust + neglect, label="Neglect", color="lightgray")
-    ax.fill_between(x, trust + neglect, 1, label="Distrust", color="salmon")
+    ax.fill_between(x, trust + neglect, 1, label="Distrust", color="skyblue")
     solara.FigureMatplotlib(fig)
 
 BS_Plot = make_plot_component({"Belief Scores": '#800080'})

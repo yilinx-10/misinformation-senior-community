@@ -4,14 +4,6 @@ import networkx as nx
 import mesa
 from mesa import Model
 from agents import NetworkAgent
-# Staff and Resident, 
-# all receives and are susceptible to misinformation, staff agent higher prob 
-# to be active on social media(higher frequency of contact with misinfo)
-# but lower susceptability(determined by two broad categories of factors:
-# agent-related and interaction. Agent related: socially active, knowledge, digital literacy
-# etc. Interaction: from who receives the message tie weight. ). Staff agent
-# actively seeks fact-checking services(with prob determine misinfo or not) and 
-# actively reach out to residents in contact to clarify info(or perhaps spread truth?). 
 
 # Helper Functions for Network Construction
 def reciprocated_directed_graph(n, p, seed=None):
@@ -45,8 +37,9 @@ def staff_or_resident(graph, n, ratio):
     # Set weight=None as we care more about 
     # connected or not than strength of connection in this case 
     centrality = nx.degree_centrality(graph)
-    # Sort by betweenness centrality
-    # randomly select among nodes of high betweenness centrality to be staffs
+    # Sort by centrality
+    # randomly select among nodes of high centrality to be staffs
+    # to replicate real-world situations
     selection_range = int(n * ratio * 2)
     sorted_nodes = sorted(centrality, key=centrality.get, reverse=True)[:selection_range:]
     selected_nodes = random.sample(sorted_nodes, int(n * ratio))
@@ -110,8 +103,8 @@ class MisinformationNetwork(Model):
     # Define initiation
     def __init__(
         self,
-        num_residents = 20,
-        avg_node_degree = 5,
+        num_residents = 50,
+        avg_node_degree = 10,
         network_type="uniform weight",
         staff_resident_ratio = 0.1,
         alpha_cognitive = 3, # used to generate beta distribution for cognitive ability
@@ -158,12 +151,6 @@ class MisinformationNetwork(Model):
 
         # Get edge weights
         self.weight_lst = self.get_weight_lst()
-
-        # Get position
-        # if self.network_type == "smallworld":
-        #     self.position = nx.circular_layout(self.G)
-        # else:
-        #     self.position = nx.spring_layout(self.G, k = 1, seed=seed)
         
         self.position = nx.circular_layout(self.G)
 
@@ -173,8 +160,8 @@ class MisinformationNetwork(Model):
         # Define data collection
         self.datacollector = mesa.DataCollector(
             model_reporters = {
-                "Distrust": lambda m: len([a for a in m.agents if a.belief_scale > 0.33]) / len(m.agents),
-                "Trust": lambda m: len([a for a in m.agents if a.belief_scale < -0.33]) / len(m.agents),
+                "Trust": lambda m: len([a for a in m.agents if a.belief_scale > 0.33]) / len(m.agents),
+                "Distrust": lambda m: len([a for a in m.agents if a.belief_scale < -0.33]) / len(m.agents),
                 "Neglect": lambda m: len([a for a in m.agents if -0.33 <= a.belief_scale <= 0.33]) / len(m.agents),
                 "Belief Scores": calc_belief,
             }
@@ -222,5 +209,7 @@ class MisinformationNetwork(Model):
         self.agents.shuffle_do("step")
         self.datacollector.collect(self)
         #Stopping Condition
-        if calc_belief(self) == abs(self.num_nodes):
+        data = self.datacollector.get_model_vars_dataframe()
+        score = abs(data['Belief Scores'].iloc[-1])
+        if score >= self.num_nodes - 1:
             self.running = False

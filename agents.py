@@ -49,7 +49,7 @@ class NetworkAgent(Agent):
                 receiver.received.append((self.node, self.belief_scale))
 
                 if self.belief_scale > 0 and self.random.random() < self.model.fact_checking_prob * receiver.digital_literacy:
-                    receiver.belief_scale  = -1# Adjustments HERE PERHAPS?
+                    receiver.belief_scale  = -1
                     receiver.adjust_weight()
                     break
 
@@ -57,9 +57,7 @@ class NetworkAgent(Agent):
                 authority = 0.5
 
                 if receiver.se_motivated: # only residents are
-
                     se_score += self.model.G[receiver.node][self.node]['weight']
-
                     if not self.se_motivated: # if sender is not resident
                         authority = 1
 
@@ -68,18 +66,22 @@ class NetworkAgent(Agent):
                 # 1) sender wrong belief: update own belief less
                 # 2) sender correct belief: update own belief more
                 if self.belief_scale > 0:
-                    receiver.belief_scale += (1 - receiver.digital_literacy)*(1 - receiver.cognitive_ability)*se_score*authority
+                    receiver.belief_scale +=  (1 - receiver.digital_literacy)*(1 - receiver.cognitive_ability)*se_score*authority
                 elif self.belief_scale < 0:
-                    receiver.belief_scale += receiver.digital_literacy*receiver.cognitive_ability*se_score*authority
+                    receiver.belief_scale -= receiver.digital_literacy*receiver.cognitive_ability*se_score*authority
 
                 receiver.belief_scale = min(receiver.belief_scale, 1)
                 receiver.belief_scale = max(receiver.belief_scale, -1)
 
     def adjust_weight(self):
         if self.received:
-            for sender, attitude in self.received:
-                if attitude > 0:
+            rm_lst = []
+            for id, message in enumerate(self.received):
+                sender, attitude = message
+                if attitude > 0.33:
                     self.model.G[self.node][sender]['weight'] *= (1 - self.model.confidence_deprecation_rate)
+                rm_lst.append(id)
+            self.received = [message for id, message in enumerate(self.received) if id not in rm_lst]
 
     def step(self):
         self.check()
